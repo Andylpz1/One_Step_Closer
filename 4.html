@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>💖步步倾心💖——一局定情</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #ffdde1;
+      margin: 0;
+      padding: 20px;
+    }
+    h1 {
+      color: #ff4d6d;
+      text-align: center;
+    }
+    #rules {
+      max-width: 600px;
+      margin: 0 auto 20px auto;
+      padding: 10px;
+      background-color: #fff0f2;
+      border: 2px dashed #ff4d6d;
+      border-radius: 10px;
+      text-align: left;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    #chessboard {
+      display: grid;
+      grid-template-columns: repeat(8, 50px);
+      grid-template-rows: repeat(8, 50px);
+      gap: 2px;
+      width: 420px;
+      margin: 20px auto;
+      border: 3px solid #ff4d6d;
+    }
+    .square {
+      width: 50px;
+      height: 50px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+    }
+    .light { background-color: #ffe4e1; }
+    .dark { background-color: #ffb6c1; }
+    button {
+      padding: 10px 20px;
+      font-size: 18px;
+      background-color: #ff4d6d;
+      color: white;
+      border: none;
+      cursor: pointer;
+      border-radius: 5px;
+      display: block;
+      margin: 0 auto 20px auto;
+    }
+    button:hover {
+      background-color: #e60050;
+    }
+    #info, #status {
+      text-align: center;
+      font-size: 26px;
+      margin: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>💖步步倾心💖</h1>
+  
+  <button id="toggleRulesBtn">显示/隐藏规则</button>
+  <div id="rules">
+    <strong>游戏规则：</strong>
+    <ol>
+      <li>棋盘为 8×8，每格仅容纳一个图标。</li>
+      <li>
+        国王 ♔（方向键控制）：初始移动模式为 [1,2,1]，吃到 2 个礼物后升级为 [3,3,3]。
+      </li>
+      <li>
+        王后 ♕（WASD 控制）：移动模式为 [2,2,2]。
+      </li>
+      <li>
+        道具：
+        <ul>
+          <li>爱心 ❤️：王后吃到 8 个即获胜。</li>
+          <li>礼物 🎁 / 💍：国王吃到 2 个后升级移动模式。</li>
+          <li>巫师 🧙：触发后消失，刷新剩余礼物及所有爱心。</li>
+          <li>王子 🤴：触发后消失，该玩家被随机传送。</li>
+        </ul>
+      </li>
+      <li>
+        胜负条件：做为国王送达你的爱意，或是做为王后吃到 8 个爱心。
+      </li>
+    </ol>
+  </div>
+  
+  <button onclick="startGame()">开始游戏</button>
+  <p id="info"></p>
+  <div id="chessboard"></div>
+  <p id="status"></p>
+  
+  <script>
+
+    let kingPos, queenPos, hearts, gifts, wizard, prince;
+    let collectedHearts = 0;       
+    let kingGiftCount = 0;         
+    let gameActive = false;
+    
+
+    let kingPattern = [1, 2, 1]; 
+    const kingPatternBuffed = [3, 3, 3];
+
+    let queenPattern = [2, 2, 2];
+    
+
+    let currentTurn = "king";  
+    let remainingMoves = 0;
+    let kingIndex = 0;
+    let queenIndex = 0;
+    
+
+    function createBoard() {
+      const board = document.getElementById("chessboard");
+      board.innerHTML = "";
+      for (let i = 0; i < 8; i++) {
+        for (let j = 0; j < 8; j++) {
+          const square = document.createElement("div");
+          square.className = "square " + ((i + j) % 2 === 0 ? "light" : "dark");
+          if (kingPos.x === i && kingPos.y === j) {
+            square.innerHTML = "♔";
+          } else if (queenPos.x === i && queenPos.y === j) {
+            square.innerHTML = "♕";
+          } else if (wizard && wizard.x === i && wizard.y === j) {
+            square.innerHTML = "🧙";
+          } else if (prince && prince.x === i && prince.y === j) {
+            square.innerHTML = "🤴";
+          } else if (gifts && gifts.some(g => g.x === i && g.y === j)) {
+            const giftObj = gifts.find(g => g.x === i && g.y === j);
+            square.innerHTML = giftObj.icon;
+          } else if (hearts.some(h => h.x === i && h.y === j)) {
+            square.innerHTML = "❤️";
+          }
+          board.appendChild(square);
+        }
+      }
+    }
+    
+
+    function generateHearts() {
+      hearts = [];
+      while (hearts.length < 12) {
+        const x = Math.floor(Math.random() * 8);
+        const y = Math.floor(Math.random() * 8);
+        if ((x === kingPos.x && y === kingPos.y) || 
+            (x === queenPos.x && y === queenPos.y) ||
+            (wizard && x === wizard.x && y === wizard.y) ||
+            (prince && x === prince.x && y === prince.y)) continue;
+        if (gifts && gifts.some(g => g.x === x && g.y === y)) continue;
+        if (hearts.some(h => h.x === x && h.y === y)) continue;
+        hearts.push({ x, y });
+      }
+    }
+    
+
+    function generateGifts() {
+      gifts = [];
+      const icons = ["🎁", "💍"];
+      for (let i = 0; i < 2; i++) {
+        while (true) {
+          const x = Math.floor(Math.random() * 8);
+          const y = Math.floor(Math.random() * 8);
+          if ((x === kingPos.x && y === kingPos.y) || 
+              (x === queenPos.x && y === queenPos.y) ||
+              (wizard && x === wizard.x && y === wizard.y) ||
+              (prince && x === prince.x && y === prince.y)) continue;
+          if (gifts.some(g => g.x === x && g.y === y)) continue;
+          gifts.push({ x, y, icon: icons[i] });
+          break;
+        }
+      }
+    }
+    
+
+    function generateWizard() {
+      while (true) {
+        const x = Math.floor(Math.random() * 8);
+        const y = Math.floor(Math.random() * 8);
+        if ((x === kingPos.x && y === kingPos.y) || (x === queenPos.x && y === queenPos.y) ||
+            (prince && x === prince.x && y === prince.y)) continue;
+        wizard = { x, y };
+        break;
+      }
+    }
+    
+
+    function generatePrince() {
+      while (true) {
+        const x = Math.floor(Math.random() * 8);
+        const y = Math.floor(Math.random() * 8);
+        if ((x === kingPos.x && y === kingPos.y) ||
+            (x === queenPos.x && y === queenPos.y) ||
+            (wizard && x === wizard.x && y === wizard.y)) continue;
+        if (gifts && gifts.some(g => g.x === x && g.y === y)) continue;
+        if (hearts && hearts.some(h => h.x === x && h.y === y)) continue;
+        prince = { x, y };
+        break;
+      }
+    }
+    
+
+    function refreshGifts() {
+      if (!gifts || gifts.length === 0) return;
+      for (let i = 0; i < gifts.length; i++) {
+        let newX, newY;
+        do {
+          newX = Math.floor(Math.random() * 8);
+          newY = Math.floor(Math.random() * 8);
+        } while (
+          (newX === kingPos.x && newY === kingPos.y) ||
+          (newX === queenPos.x && newY === queenPos.y) ||
+          (wizard && newX === wizard.x && newY === wizard.y) ||
+          (prince && newX === prince.x && newY === prince.y)
+        );
+        gifts[i].x = newX;
+        gifts[i].y = newY;
+      }
+    }
+
+    function refreshHearts() {
+        if (!hearts || hearts.length === 0) return;
+        for (let i = 0; i < hearts.length; i++) {
+            let newX, newY;
+            do {
+            newX = Math.floor(Math.random() * 8);
+            newY = Math.floor(Math.random() * 8);
+            } while (
+            (newX === kingPos.x && newY === kingPos.y) ||
+            (newX === queenPos.x && newY === queenPos.y) ||
+            (wizard && newX === wizard.x && newY === wizard.y) ||
+            (prince && newX === prince.x && newY === prince.y) ||
+            (gifts && gifts.some(g => g.x === newX && g.y === newY)) ||
+            hearts.some((h, idx) => idx !== i && h.x === newX && h.y === newY)
+            );
+            hearts[i].x = newX;
+            hearts[i].y = newY;
+        }
+    }
+
+    
+
+    function triggerWizardEffect() {
+      wizard = null;
+      refreshGifts();
+      refreshHearts();
+      createBoard();
+    }
+    
+
+    function triggerPrinceEffect(player) {
+      let newPos = getRandomPosition();
+      while (prince && newPos.x === prince.x && newPos.y === prince.y) {
+        newPos = getRandomPosition();
+      }
+      if (player === "king") {
+        kingPos = newPos;
+      } else {
+        queenPos = newPos;
+      }
+      prince = null;
+      createBoard();
+    }
+    
+
+    function getRandomPosition() {
+      return { x: Math.floor(Math.random() * 8), y: Math.floor(Math.random() * 8) };
+    }
+    
+
+    function updateInfo() {
+      const infoDiv = document.getElementById("info");
+      let patternStep;
+      if (currentTurn === "king") {
+        const pattern = kingHasGift() ? kingPatternBuffed : kingPattern;
+        patternStep = pattern[kingIndex];
+      } else {
+        patternStep = queenPattern[queenIndex];
+      }
+      infoDiv.innerText = `当前回合：${currentTurn === "king" ? "国王" : "王后"}，剩余步数：${remainingMoves}，爱心：${collectedHearts}/8，礼物：${kingGiftCount}/2`;
+    }
+    
+
+    function kingHasGift() {
+      return kingGiftCount >= 2;
+    }
+    
+
+    function checkWin() {
+      if (kingPos.x === queenPos.x && kingPos.y === queenPos.y) {
+        document.getElementById("status").innerText = "国王成功告白，情人节快乐！💘";
+        gameActive = false;
+        return true;
+      }
+      if (collectedHearts >= 8) {
+        document.getElementById("status").innerText = "王后献上爱意，情人节快乐！💘";
+        gameActive = false;
+        return true;
+      }
+      return false;
+    }
+    
+
+    function moveCurrentPiece(direction) {
+      if (!gameActive) return;
+      
+      let newPos = (currentTurn === "king") ? { ...kingPos } : { ...queenPos };
+      if (direction === "up") newPos.x -= 1;
+      else if (direction === "down") newPos.x += 1;
+      else if (direction === "left") newPos.y -= 1;
+      else if (direction === "right") newPos.y += 1;
+      if (newPos.x < 0 || newPos.x > 7 || newPos.y < 0 || newPos.y > 7) return;
+      
+      if (currentTurn === "king") {
+        kingPos = newPos;
+        if (gifts && gifts.length > 0) {
+          let index = gifts.findIndex(g => g.x === kingPos.x && g.y === kingPos.y);
+          if (index !== -1) {
+            kingGiftCount++;
+            gifts.splice(index, 1);
+          }
+        }
+      } else {
+        queenPos = newPos;
+        for (let i = 0; i < hearts.length; i++) {
+          if (hearts[i].x === queenPos.x && hearts[i].y === queenPos.y) {
+            hearts.splice(i, 1);
+            collectedHearts++;
+            break;
+          }
+        }
+      }
+      
+      if (prince && newPos.x === prince.x && newPos.y === prince.y) {
+        triggerPrinceEffect(currentTurn);
+      }
+      if (wizard && newPos.x === wizard.x && newPos.y === wizard.y) {
+        triggerWizardEffect();
+      }
+      
+      if (checkWin()) {
+        createBoard();
+        updateInfo();
+        return;
+      }
+      
+      remainingMoves--;
+      if (remainingMoves <= 0) {
+        if (currentTurn === "king") {
+          kingIndex = (kingIndex + 1) % kingPattern.length;
+          currentTurn = "queen";
+          remainingMoves = queenPattern[queenIndex];
+        } else {
+          queenIndex = (queenIndex + 1) % queenPattern.length;
+          currentTurn = "king";
+          remainingMoves = (kingHasGift() ? kingPatternBuffed : kingPattern)[kingIndex];
+        }
+      }
+      
+      createBoard();
+      updateInfo();
+    }
+    
+    document.addEventListener("keydown", function(event) {
+      if (!gameActive) return;
+      if (currentTurn === "king") {
+        if (event.key === "ArrowUp") moveCurrentPiece("up");
+        else if (event.key === "ArrowDown") moveCurrentPiece("down");
+        else if (event.key === "ArrowLeft") moveCurrentPiece("left");
+        else if (event.key === "ArrowRight") moveCurrentPiece("right");
+      } else {
+        if (event.key === "w" || event.key === "W") moveCurrentPiece("up");
+        else if (event.key === "s" || event.key === "S") moveCurrentPiece("down");
+        else if (event.key === "a" || event.key === "A") moveCurrentPiece("left");
+        else if (event.key === "d" || event.key === "D") moveCurrentPiece("right");
+      }
+    });
+    
+    function startGame() {
+      kingPos = { x: 0, y: 4 };
+      queenPos = { x: 7, y: 4 };
+      collectedHearts = 0;
+      kingGiftCount = 0;
+      kingIndex = 0;
+      queenIndex = 0;
+      currentTurn = "king";
+      remainingMoves = kingPattern[kingIndex];
+      generateWizard();
+      generatePrince();
+      generateGifts();
+      generateHearts();
+      gameActive = true;
+      document.getElementById("status").innerText = "";
+      updateInfo();
+      createBoard();
+    }
+    
+
+    document.getElementById("toggleRulesBtn").addEventListener("click", function() {
+      const rulesDiv = document.getElementById("rules");
+      if (rulesDiv.style.display === "none") {
+        rulesDiv.style.display = "block";
+      } else {
+        rulesDiv.style.display = "none";
+      }
+    });
+    
+    startGame();
+  </script>
+</body>
+</html>
